@@ -1,0 +1,200 @@
+// ==UserScript==
+// @name         3x3 Speed Escape — 500x Streak
+// @namespace    local.speedescape.neon.streak
+// @version      1.0.0
+// @description  Experimental local 500x streak multiplier with an on/off control.
+// @match        https://www.timestables.com/gf/3x3-speed/*
+// @grant        none
+// @sandbox      raw
+// @run-at       document-end
+// ==/UserScript==
+
+(() => {
+  'use strict';
+
+  if (window.__neonStreak500) return;
+  window.__neonStreak500 = true;
+
+  let enabled = false;
+  let hits = 0;
+  let originalFloor = null;
+
+  // The inspected game computes:
+  // 1 + Math.floor(streak) * 0.1
+  // Only override its direct getStreakMultiplier call.
+  function streakFloor(value) {
+    if (
+      enabled &&
+      typeof value === 'number' &&
+      Number.isFinite(value)
+    ) {
+      const caller =
+        String(new Error().stack || '').split('\n')[2] || '';
+
+      if (
+        /^\s*at getStreakMultiplier \(https:\/\/www\.timestables\.com\/gf\/3x3-speed\//
+          .test(caller)
+      ) {
+        hits++;
+        return 4990;
+      }
+    }
+
+    return Reflect.apply(originalFloor, this, arguments);
+  }
+
+  const host = document.createElement('div');
+
+  host.style.cssText = `
+    position:fixed;
+    left:12px;
+    bottom:12px;
+    z-index:2147483647;
+    pointer-events:auto;
+  `;
+
+  const root = host.attachShadow({mode: 'open'});
+
+  root.innerHTML = `
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      .card {
+        width: 245px;
+        padding: 15px;
+        border: 1px solid #544773;
+        border-radius: 14px;
+        background: #101522f5;
+        color: #eef0ff;
+        box-shadow: 0 12px 35px #0008;
+        font: 12px/1.5 system-ui;
+      }
+
+      small {
+        color: #b28aff;
+        font-size: 9px;
+        letter-spacing: 2px;
+      }
+
+      h3 {
+        margin: 4px 0 12px;
+        font-size: 19px;
+      }
+
+      button {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #76609e;
+        border-radius: 9px;
+        background: #302642;
+        color: #fff;
+        font: 600 12px system-ui;
+        cursor: pointer;
+      }
+
+      button[aria-pressed=true] {
+        background: #644493;
+      }
+
+      button:focus-visible {
+        outline: 2px solid #b28aff;
+        outline-offset: 3px;
+      }
+
+      p {
+        margin: 10px 0 0;
+        color: #b7c0d4;
+        font-size: 11px;
+      }
+    </style>
+
+    <div class="card">
+      <small>NEON · LOCAL OVERRIDE</small>
+      <h3>Streak multiplier · 500×</h3>
+
+      <button aria-pressed="false">
+        Enable 500× streak
+      </button>
+
+      <p id="status" role="status">
+        Off · your normal streak multiplier applies.
+      </p>
+
+      <p>
+        Saved streak count unchanged.
+        Escape turns this off.
+      </p>
+    </div>
+  `;
+
+  document.body.appendChild(host);
+
+  const button = root.querySelector('button');
+  const status = root.querySelector('#status');
+
+  function render() {
+    button.setAttribute('aria-pressed', String(enabled));
+
+    button.textContent = enabled
+      ? 'Disable 500× streak'
+      : 'Enable 500× streak';
+
+    status.textContent = !enabled
+      ? 'Off · your normal streak multiplier applies.'
+      : hits > 0
+        ? 'Connected · local streak calculation overridden to 500×.'
+        : 'Waiting for the game’s streak calculation. If this stays here, this build is unsupported.';
+  }
+
+  function disable() {
+    enabled = false;
+
+    if (Math.floor === streakFloor) {
+      Math.floor = originalFloor;
+    }
+
+    render();
+  }
+
+  button.onclick = () => {
+    if (enabled) {
+      disable();
+      return;
+    }
+
+    if (Math.floor !== streakFloor) {
+      originalFloor = Math.floor;
+    }
+
+    hits = 0;
+    enabled = true;
+    Math.floor = streakFloor;
+
+    render();
+  };
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') disable();
+  }, true);
+
+  window.addEventListener('message', e => {
+    if (
+      e.origin === location.origin &&
+      e.source === window.parent &&
+      e.data?.type === 'speed-escape-neon' &&
+      e.data.action === 'stop'
+    ) {
+      disable();
+    }
+  });
+
+  window.addEventListener('pagehide', disable);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) disable();
+  });
+
+  setInterval(render, 1000);
+})();
